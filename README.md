@@ -1,3 +1,9 @@
+# 更新内容
+由于vscode中的Claude code再更新后react-markdown 渲染管线的变量名发生了变化(minifier 分配了不同的短变量名),原始版本代码失效,该版本进行了修复可适用于Claude Code V.2.1.191版本
+
+## 具体修改
+对新旧版本的Vfile变量名做了动态的检测匹配,使得插件支持2.1.31以及2.1.191等新旧版本
+
 # claude-code-latex
 
 为 VSCode Claude Code 插件添加 **LaTeX 公式渲染**支持。
