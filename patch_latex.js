@@ -222,7 +222,7 @@ if (!extAlreadyPatched) {
 // remark-parse 对 \[ \] \( \) 做转义处理，导致 latex-render.js 无法匹配。
 //
 // 注入点：react-markdown 组件把 markdown 字符串赋值给 VFile 之前：
-//   if(typeof Y==="string")F.value=Y
+//   if(typeof <VAR>==="string")<VFILE>.value=<VAR>
 //
 // 在赋值前把源字符串中的序列替换为 Unicode 占位符：
 //   \[  →  ⟦ (U+27E6)    \]  →  ⟧ (U+27E7)
@@ -232,14 +232,34 @@ if (!extAlreadyPatched) {
 
 if (!idxAlreadyPatched) {
   // 注入点在 VFile 赋值语句前（全文唯一）
-  const idxTarget = 'if(typeof Y==="string")F.value=Y';
-  const idxTargetIdx = idxContent.indexOf(idxTarget);
+  // 支持多个版本的模式：新版在前，旧版兜底
+  //   模式格式: if(typeof <VAR>==="string")<VFILE>.value=<VAR>
+  //   其中 <VAR> 是需要预处理的 markdown 字符串变量名
+  const idxTargets = [
+    'if(typeof n==="string")f.value=n',  // v2.1.191+
+    'if(typeof Y==="string")F.value=Y',  // v2.1.31 (legacy)
+  ];
+
+  let idxTargetIdx = -1;
+  let matchedTarget = '';
+  for (const target of idxTargets) {
+    idxTargetIdx = idxContent.indexOf(target);
+    if (idxTargetIdx !== -1) {
+      matchedTarget = target;
+      break;
+    }
+  }
 
   if (idxTargetIdx === -1) {
     console.error('[Patch] webview/index.js：未找到 react-markdown 注入点，跳过。');
     console.error('[Patch] 扩展版本可能已更新，请检查 index.js 结构。');
+    console.error('[Patch] 尝试过的模式:', idxTargets.join(', '));
   } else {
-    console.log('[Patch] webview/index.js 注入点已找到（react-markdown VFile 赋值）');
+    // 从匹配模式中提取 markdown 字符串变量名
+    // 模式: if(typeof <VAR>==="string")... → 取 <VAR>
+    const varMatch = matchedTarget.match(/typeof (\w+)===/);
+    const markdownVar = varMatch ? varMatch[1] : 'n';
+    console.log(`[Patch] webview/index.js 注入点已找到（react-markdown VFile 赋值，变量名=${markdownVar}）`);
 
     if (!fs.existsSync(indexBak)) {
       fs.copyFileSync(indexJs, indexBak);
@@ -251,14 +271,14 @@ if (!idxAlreadyPatched) {
     // 使用 String.fromCharCode(92) 构造反斜杠，避免补丁脚本自身触发转义
     const bs = String.fromCharCode(92);
     const preprocessCode =
-      `Y=Y.replace(/${bs}${bs}${bs}[/g,'⟦')` +
+      `${markdownVar}=${markdownVar}.replace(/${bs}${bs}${bs}[/g,'⟦')` +
       `.replace(/${bs}${bs}${bs}]/g,'⟧')` +
       `.replace(/${bs}${bs}${bs}(/g,'⟨')` +
       `.replace(/${bs}${bs}${bs})/g,'⟩');` +
       `/*__latex_preprocess__*/`;
 
     // 在赋值语句前插入预处理
-    idxContent = idxContent.replace(idxTarget, preprocessCode + idxTarget);
+    idxContent = idxContent.replace(matchedTarget, preprocessCode + matchedTarget);
     fs.writeFileSync(indexJs, idxContent, 'utf8');
     console.log('[Patch] webview/index.js 已注入 LaTeX 预处理代码');
   }
